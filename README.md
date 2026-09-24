@@ -1,1 +1,0 @@
-# tonmonys_bot
