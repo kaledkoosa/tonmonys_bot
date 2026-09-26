@@ -1,80 +1,77 @@
 import os
 import time
+import sqlite3
 import telebot
 import requests
-import psycopg2  # مكتبة الاتصال بقاعدة بيانات PostgreSQL (Supabase)
 from telebot import types
 from threading import Thread
 from flask import Flask
 
-# 1. إعدادات البوت وقاعدة البيانات
+# 1. إعدادات البوت الأساسية
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))  # معرف الآيدي الخاص بك كأدمن
 RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")
-DATABASE_URL = os.getenv("DATABASE_URL")  # رابط الاتصال من Supabase
 
 bot = telebot.TeleBot(TOKEN)
+DB_FILE = "ton_bot_database.db"
 
-# دالة للاتصال بقاعدة البيانات وإنشاء الجداول لو لم تكن موجودة
-def init_db():
-    conn = psycopg2.connect(DATABASE_URL)
+# دالة لإنشاء جداول قاعدة البيانات المدمجة تلقائياً
+def init_local_db():
+    conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    # جدول المستخدمين والأرصدة والإحالات
+    # إنشاء جدول المستخدمين
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            user_id BIGINT PRIMARY KEY,
-            balance TEXT DEFAULT '0.0',
-            referred_by BIGINT,
+            user_id INTEGER PRIMARY KEY,
+            balance REAL DEFAULT 0.0,
+            referred_by INTEGER,
             referrals_count INTEGER DEFAULT 0,
             completed_tasks TEXT DEFAULT ''
         )
     ''')
-    # جدول المهام التي يضيفها الأدمن
+    # إنشاء جدول المهام
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS tasks (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             description TEXT NOT NULL
         )
     ''')
     conn.commit()
-    cursor.close()
     conn.close()
 
-# دالة لجلب أو إنشاء بيانات مستخدم من قاعدة البيانات
+# دالة لجلب بيانات المستخدم
 def get_user_data(user_id):
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT balance, referred_by, referrals_count, completed_tasks FROM users WHERE user_id = %s", (user_id,))
+    cursor.execute("SELECT balance, referred_by, referrals_count, completed_tasks FROM users WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
     
     if not row:
-        cursor.execute("INSERT INTO users (user_id) VALUES (%s)", (user_id,))
+        cursor.execute("INSERT INTO users (user_id) VALUES (?)", (user_id,))
         conn.commit()
         data = {"balance": 0.0, "referred_by": None, "referrals_count": 0, "completed_tasks": []}
     else:
         tasks_list = [int(i) for i in row[3].split(",") if i] if row[3] else []
         data = {
-            "balance": float(row[0]),
+            "balance": row[0],
             "referred_by": row[1],
             "referrals_count": row[2],
             "completed_tasks": tasks_list
         }
-    cursor.close()
     conn.close()
     return data
 
-# دالة لتحديث بيانات المستخدم في قاعدة البيانات
+# دالة لتحديث بيانات المستخدم
 def update_user_data(user_id, balance, referred_by, referrals_count, completed_tasks):
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     tasks_str = ",".join(map(str, completed_tasks))
     cursor.execute('''
         UPDATE users 
-        SET balance = %s, referred_by = %s, referrals_count = %s, completed_tasks = %s 
-        WHERE user_id = %s
-    ''', (str(balance), referred_by, referrals_count, tasks_str, user_id))
+        SET balance = ?, referred_by = ?, referrals_count = ?, completed_tasks = ? 
+        WHERE user_id = ?
+    ''', (balance, referred_by, referrals_count, tasks_str, user_id))
     conn.commit()
-    cursor.close()
     conn.close()
 
 # 2. تصميم الأزرار التقليدية الرئيسية (Reply Keyboard)
@@ -106,26 +103,27 @@ def start_command(message):
         try:
             referrer_id = int(text_split[1])
             if referrer_id != user_id:
-                # التحقق من وجود حساب للمُحيل وجلب بياناته لتعديلها
+                # تحديث بيانات الشخص الذي قام بالدعوة (+0.01 تون)
                 ref_data = get_user_data(referrer_id)
                 ref_data["balance"] += 0.01
                 ref_data["referrals_count"] += 1
                 update_user_data(referrer_id, ref_data["balance"], ref_data["referred_by"], ref_data["referrals_count"], ref_data["completed_tasks"])
                 
+                # تحديث بيانات المستخدم الجديد وتوثيق من استدعاه
                 user_data["referred_by"] = referrer_id
                 update_user_data(user_id, user_data["balance"], user_data["referred_by"], user_data["referrals_count"], user_data["completed_tasks"])
                 
                 try:
-                    bot.send_message(referrer_id, f"🎉 لديك إحالة جديدة! تم إضافة **0.01 TON** إلى رصيدك.", parse_mode="Markdown")
+                    bot.send_message(referrer_id, f"🎉 إحالة ناجحة! تم إضافة **0.01 TON** لرصيدك.", parse_mode="Markdown")
                 except Exception:
                     pass
         except ValueError:
             pass
 
-    welcome_text = "👋 أهلاً بك في بوت ربح TON مع حفظ البيانات التلقائي!\n\nاستخدم الأزرار التقليدية لتصفح البوت."
+    welcome_text = "👋 أهلاً بك في بوت ربح TON المحدث!\n\nاستخدم الأزرار التقليدية بالأسفل لجمع الأرباح."
     bot.send_message(chat_id, welcome_text, reply_markup=main_keyboard())
 
-# 4. معالجة الأزرار التقليدية
+# 4. معالجة الضغط على الأزرار التقليدية
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     user_id = message.from_user.id
@@ -139,61 +137,59 @@ def handle_text(message):
         bot_username = bot.get_me().username
         ref_link = f"https://t.me{bot_username}?start={user_id}"
         ref_text = (
-            f"👥 **نظام الإحالة الخاص بك:**\n\n"
+            f"👥 **نظام الإحالة المدمج:**\n\n"
             f"💰 ربح كل إحالة: **0.01 TON**\n"
-            f"📊 عدد إحالاتك: `{user_data['referrals_count']}`\n\n"
+            f"📊 عدد إحالاتك الحالية: `{user_data['referrals_count']}`\n\n"
             f"🔗 رابط الإحالة الخاص بك:\n`{ref_link}`"
         )
         bot.send_message(chat_id, ref_text, parse_mode="Markdown")
 
     elif message.text == "💰 الرصيد والسحب":
         wallet_text = (
-            f"💰 **رصيدك الحالي المخزن:** `{user_data['balance']:.3f} TON`\n\n"
-            f"📥 للسحب الفوري اضغط على الزر أدناه لإبلاغ الأدمن."
+            f"💰 **رصيدك الحالي:** `{user_data['balance']:.3f} TON`\n\n"
+            f"📥 اضغط على الزر بالأسفل لطلب سحب أرباحك وتنبيه الأدمن."
         )
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("➡️ طلب سحب الأرباح", callback_data="request_withdraw"))
         bot.send_message(chat_id, wallet_text, parse_mode="Markdown", reply_markup=markup)
 
     elif message.text == "📋 المهام":
-        # جلب المهام من قاعدة البيانات السحابية
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute("SELECT id, description FROM tasks")
         all_tasks = cursor.fetchall()
-        cursor.close()
         conn.close()
 
         available_tasks = [t for t in all_tasks if t[0] not in user_data["completed_tasks"]]
         
         if not available_tasks:
-            bot.send_message(chat_id, "❌ لا توجد مهام جديدة حالياً.")
+            bot.send_message(chat_id, "❌ لا توجد مهام جديدة متاحة حالياً.")
             return
         
         bot.send_message(chat_id, "📋 **المهام المتاحة حالياً:**")
         for task_id, description in available_tasks:
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("✅ إكمال المهمة", callback_data=f"complete_task_{task_id}"))
+            markup.add(types.InlineKeyboardButton("✅ إكمال المهمة وتأكيدها", callback_data=f"complete_task_{task_id}"))
             bot.send_message(chat_id, f"🔹 {description}\n💰 المكافأة: **0.003 TON**", parse_mode="Markdown", reply_markup=markup)
 
+    # لوحة تحكم الأدمن
     elif message.text == "/admin" and user_id == ADMIN_ID:
-        bot.send_message(chat_id, "🔧 لوحة تحكم الأدمن وقاعدة البيانات.", reply_markup=admin_keyboard())
+        bot.send_message(chat_id, "🔧 أهلاً بك في لوحة تحكم الأدمن المدمجة.", reply_markup=admin_keyboard())
 
     elif message.text == "➕ إضافة مهمة" and user_id == ADMIN_ID:
-        msg = bot.send_message(chat_id, "أرسل وصف المهمة لحفظها في السيرفر:")
+        msg = bot.send_message(chat_id, "أرسل وصف المهمة لحفظها تلقائياً في قاعدة البيانات:")
         bot.register_next_step_handler(msg, save_task)
 
 def save_task(message):
     if message.text:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO tasks (description) VALUES (%s)", (message.text,))
+        cursor.execute("INSERT INTO tasks (description) VALUES (?)", (message.text,))
         conn.commit()
-        cursor.close()
         conn.close()
-        bot.send_message(message.chat.id, "✅ تم حفظ المهمة بنجاح داخل قاعدة البيانات السحابية!", reply_markup=admin_keyboard())
+        bot.send_message(message.chat.id, "✅ تم حفظ المهمة بنجاح وعرضها للمستخدمين!", reply_markup=admin_keyboard())
 
-# 5. معالجة عمليات الضغط والتأكيد
+# 5. أزرار التأكيد المضمنة
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     user_id = call.from_user.id
@@ -201,9 +197,9 @@ def callback_query(call):
 
     if call.data == "request_withdraw":
         if user_data["balance"] <= 0:
-            bot.answer_callback_query(call.id, "❌ رصيدك الحالي 0.", show_alert=True)
+            bot.answer_callback_query(call.id, "❌ رصيدك الحالي 0 لا يمكن سحبه.", show_alert=True)
         else:
-            bot.send_message(call.message.chat.id, f"📩 أرسل عنوان محفظتك ومبلغ السحب للأدمن الحالي.\nرصيدك: {user_data['balance']:.3f} TON")
+            bot.send_message(call.message.chat.id, f"📩 أرسل عنوان محفظة TON ومبلغ السحب المُراد للأدمن.\nرصيدك المتوفر: {user_data['balance']:.3f} TON")
             bot.answer_callback_query(call.id)
 
     elif call.data.startswith("complete_task_"):
@@ -212,17 +208,17 @@ def callback_query(call):
             user_data["completed_tasks"].append(task_id)
             user_data["balance"] += 0.003
             update_user_data(user_id, user_data["balance"], user_data["referred_by"], user_data["referrals_count"], user_data["completed_tasks"])
-            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="🎉 تم الحفظ! تم إضافة **0.003 TON**")
-            bot.answer_callback_query(call.id, "تم تحديث رصيدك بنجاح!")
+            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="🎉 تم بنجاح! تم إضافة **0.003 TON** إلى رصيدك المحلي.")
+            bot.answer_callback_query(call.id, "تم تحديث الرصيد!")
         else:
-            bot.answer_callback_query(call.id, "قمت بهذه المهمة مسبقاً!", show_alert=True)
+            bot.answer_callback_query(call.id, "لقد قمت بهذه المهمة مسبقاً!", show_alert=True)
 
-# خادم الويب وKeep-Alive الوهمي
+# خادم الويب وجهاز الـ Keep-Alive
 flask_app = Flask('')
 
 @flask_app.route('/')
 def home():
-    return "<h1>Database Bot is Active!</h1>", 200
+    return "<h1>Local DB Bot is running!</h1>", 200
 
 def run_flask_server():
     port = int(os.environ.get("PORT", 8080))
@@ -239,8 +235,8 @@ def keep_alive_ping():
         time.sleep(600)
 
 if __name__ == "__main__":
-    # إنشاء وتأكيد الجداول قبل تشغيل البوت
-    init_db()
+    # تشغيل قاعدة البيانات المدمجة فوراً
+    init_local_db()
     
     flask_thread = Thread(target=run_flask_server)
     flask_thread.daemon = True
@@ -250,5 +246,5 @@ if __name__ == "__main__":
     ping_thread.daemon = True
     ping_thread.start()
     
-    print("Telegram Bot with Database is running...")
+    print("Telegram Bot with Local DB is running seamlessly...")
     bot.infinity_polling()
