@@ -9,8 +9,8 @@ from flask import Flask
 
 # 1. إعدادات البوت الأساسية ومتغيرات البيئة
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))  # معرف الآيدي الخاص بك كأدمن
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL") # جلب رابط السيرفر تلقائياً لمنع النوم
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")
 
 bot = telebot.TeleBot(TOKEN)
 DB_FILE = "ton_bot_database.db"
@@ -19,7 +19,6 @@ DB_FILE = "ton_bot_database.db"
 def init_local_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    # إنشاء جدول المستخدمين والأرصدة
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -29,7 +28,6 @@ def init_local_db():
             completed_tasks TEXT DEFAULT ''
         )
     ''')
-    # إنشاء جدول مهام الأدمن
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +49,6 @@ def get_user_data(user_id):
         conn.commit()
         data = {"balance": 0.0, "referred_by": None, "referrals_count": 0, "completed_tasks": []}
     else:
-        # تحويل سلسلة النصوص المخزنة للمهام إلى قائمة أرقام
         tasks_list = [int(i) for i in row[3].split(",") if i] if row[3] else []
         data = {
             "balance": row[0],
@@ -104,13 +101,11 @@ def start_command(message):
         try:
             referrer_id = int(text_split[1])
             if referrer_id != user_id:
-                # تحديث حساب الشخص الذي قام بالدعوة وتزويده بمكافأة 0.01 تون
                 ref_data = get_user_data(referrer_id)
                 ref_data["balance"] += 0.01
                 ref_data["referrals_count"] += 1
                 update_user_data(referrer_id, ref_data["balance"], ref_data["referred_by"], ref_data["referrals_count"], ref_data["completed_tasks"])
                 
-                # توثيق إحالة المستخدم الجديد لمنع تكرار الربح من نفس الشخص
                 user_data["referred_by"] = referrer_id
                 update_user_data(user_id, user_data["balance"], user_data["referred_by"], user_data["referrals_count"], user_data["completed_tasks"])
                 
@@ -137,12 +132,9 @@ def handle_text(message):
     elif message.text == "👥 نظام الإحالة":
         bot_username = bot.get_me().username
         ref_link = f"https://t.me{bot_username}?start={user_id}"
-        
         ref_text = f"👥 **نظام الإحالة المدمج:**\n\n💰 ربح كل إحالة: **0.01 TON**\n📊 عدد إحالاتك الحالية: `{user_data['referrals_count']}`\n\n🔗 رابط الإحالة الخاص بك (اضغط عليه مطولاً للنسخ):\n`{ref_link}`"
         
-        # استخدام بروتوكول tg:// لإجبار الهاتف على فتح تليجرام مباشرة ومشاركة الرابط دون متصفح ويب خارجي
         share_url_native = f"tg://msg_url?url={ref_link}&text=اشترك%20في%20البوت%20واجمع%20عملة%20TON%20مجاناً!"
-        
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔗 مشاركة الرابط فوراً داخل التليجرام", url=share_url_native))
         bot.send_message(chat_id, ref_text, parse_mode="Markdown", reply_markup=markup)
@@ -163,7 +155,7 @@ def handle_text(message):
         available_tasks = [t for t in all_tasks if t[0] not in user_data["completed_tasks"]]
         
         if not available_tasks:
-            bot.send_message(chat_id, "❌ لا توجد مهام جديدة متاحة حالياً. تفقد البوت لاحقاً!")
+            bot.send_message(chat_id, "❌ لا توجد مهام جديدة متاحة حالياً.")
             return
         
         bot.send_message(chat_id, "📋 **المهام المتاحة حالياً:**")
@@ -172,12 +164,11 @@ def handle_text(message):
             markup.add(types.InlineKeyboardButton("✅ إكمال المهمة وتأكيدها", callback_data=f"complete_task_{task_id}"))
             bot.send_message(chat_id, f"🔹 {description}\n💰 المكافأة: **0.003 TON**", parse_mode="Markdown", reply_markup=markup)
 
-    # التحقق من صلاحيات الأدمن واللوحة
     elif message.text == "/admin" and user_id == ADMIN_ID:
-        bot.send_message(chat_id, "🔧 أهلاً بك في لوحة تحكم الأدمن المدمجة الحرة.", reply_markup=admin_keyboard())
+        bot.send_message(chat_id, "🔧 أهلاً بك في لوحة تحكم الأدمن.", reply_markup=admin_keyboard())
 
     elif message.text == "➕ إضافة مهمة" and user_id == ADMIN_ID:
-        msg = bot.send_message(chat_id, "أرسل وصف المهمة لحفظها تلقائياً في قاعدة البيانات وعرضها للجميع:")
+        msg = bot.send_message(chat_id, "أرسل وصف المهمة لحفظها تلقائياً:")
         bot.register_next_step_handler(msg, save_task)
 
 def save_task(message):
@@ -187,9 +178,9 @@ def save_task(message):
         cursor.execute("INSERT INTO tasks (description) VALUES (?)", (message.text,))
         conn.commit()
         conn.close()
-        bot.send_message(message.chat.id, "✅ تم حفظ المهمة بنجاح وعرضها للمستخدمين!", reply_markup=admin_keyboard())
+        bot.send_message(message.chat.id, "✅ تم حفظ المهمة بنجاح!", reply_markup=admin_keyboard())
 
-# 5. معالجة الأزرار المضمنة (طلب السحب وتأكيد المهام المنجزة)
+# 5. معالجة الأزرار المضمنة
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     user_id = call.from_user.id
@@ -199,35 +190,48 @@ def callback_query(call):
         if user_data["balance"] <= 0:
             bot.answer_callback_query(call.id, "❌ رصيدك الحالي 0 لا يمكن سحبه.", show_alert=True)
         else:
-            bot.send_message(call.message.chat.id, f"📩 أرسل عنوان محفظة TON ومبلغ السحب المُراد للأدمن.\nرصيدك المتوفر حالياً: {user_data['balance']:.3f} TON")
+            bot.send_message(call.message.chat.id, f"📩 أرسل عنوان محفظة TON ومبلغ السحب المُراد للأدمن.\nرصيدك: {user_data['balance']:.3f} TON")
             bot.answer_callback_query(call.id)
 
     elif call.data.startswith("complete_task_"):
         task_id = int(call.data.split("_")[2])
         if task_id not in user_data["completed_tasks"]:
-            # إضافة مكافأة قيمتها 0.003 تون للمستخدم وتحديث قاعدة البيانات المحلية
             user_data["completed_tasks"].append(task_id)
             user_data["balance"] += 0.003
             update_user_data(user_id, user_data["balance"], user_data["referred_by"], user_data["referrals_count"], user_data["completed_tasks"])
-            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="🎉 تم بنجاح! تم إضافة **0.003 TON** إلى رصيدك المحلي في البوت.")
-            bot.answer_callback_query(call.id, "تم تحديث الرصيد ومكافأة المهمة!")
+            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="🎉 تم إضافة **0.003 TON** إلى رصيدك بنجاح.")
+            bot.answer_callback_query(call.id, "تم تحديث الرصيد!")
         else:
             bot.answer_callback_query(call.id, "لقد قمت بهذه المهمة مسبقاً!", show_alert=True)
 
-# 6. خادم الويب وجهاز الـ Keep-Alive لتجاوز قيود نوم سيرفر Render المجاني
+# 6. خادم الويب وجهاز الـ Keep-Alive لتجاوز قيود Render
 flask_app = Flask('')
 
 @flask_app.route('/')
 def home():
-    return "<h1>Local DB Bot is running smoothly!</h1>", 200
+    return "<h1>Bot Status: Active</h1>", 200
 
 def run_flask_server():
     port = int(os.environ.get("PORT", 8080))
     flask_app.run(host='0.0.0.0', port=port)
 
 def keep_alive_ping():
-    # انتظار دقيقة لضمان إقلاع السيرفر
-    time.sleep(60)
+    time.sleep(45)
     while True:
         if RENDER_URL:
-            try:
+            requests.get(RENDER_URL)
+        time.sleep(600)
+
+if __name__ == "__main__":
+    init_local_db()
+    
+    flask_thread = Thread(target=run_flask_server)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    ping_thread = Thread(target=keep_alive_ping)
+    ping_thread.daemon = True
+    ping_thread.start()
+    
+    print("Telegram Bot is running smoothly...")
+    bot.infinity_polling()
