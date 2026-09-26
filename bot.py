@@ -13,17 +13,15 @@ TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")
 
-# إعدادات القنوات (تأكد من تعديلها أو وضع القنوات الخاصة بك)
-REQUIRED_CHANNEL = "@T_ONo"   # يوزر قناة الاشتراك الإجباري
-PAYMENT_CHANNEL = "@T_ONo"   # يوزر قناة إثباتات السحب
+# ربط قناتك الخاصة بالاشتراك والإثباتات تلقائياً
+REQUIRED_CHANNEL = "@T_ONo"   
+PAYMENT_CHANNEL = "@T_ONo"   
 
 bot = telebot.TeleBot(TOKEN)
 DB_FILE = "ton_bot_pro.db"
 
-# الكابتشا والمستخدمين قيد التحقق في الذاكرة
 captcha_data = {}
 
-# دالة إنشاء قاعدة البيانات
 def init_pro_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -60,8 +58,8 @@ def get_user_data(user_id):
         conn.commit()
         data = {"balance": 0.0, "referred_by": None, "referrals_count": 0, "completed_tasks": [], "is_verified": 0}
     else:
-        tasks_list = [int(i) for i in row[3].split(",") if i] if row[3] else []
-        data = {"balance": row[0], "referred_by": row[1], "referrals_count": row[2], "completed_tasks": tasks_list, "is_verified": row[4]}
+        tasks_list = [int(i) for i in row[4].split(",") if row[4]] if row[4] else []
+        data = {"balance": row[0], "referred_by": row[1], "referrals_count": row[2], "completed_tasks": tasks_list, "is_verified": row[5]}
     conn.close()
     return data
 
@@ -77,7 +75,6 @@ def update_user_data(user_id, balance, referred_by, referrals_count, completed_t
     conn.commit()
     conn.close()
 
-# دالة التحقق من الاشتراك الإجباري
 def check_subscription(user_id):
     try:
         member = bot.get_chat_member(REQUIRED_CHANNEL, user_id)
@@ -87,7 +84,6 @@ def check_subscription(user_id):
         pass
     return False
 
-# تصميم لوحات المفاتيح
 def main_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add(types.KeyboardButton("📋 المهام المتاحة"), types.KeyboardButton("➕ وضع مهمة خاصة"))
@@ -99,14 +95,12 @@ def admin_keyboard():
     markup.add(types.KeyboardButton("➕ إضافة مهمة كأدمن"), types.KeyboardButton("🔙 القائمة الرئيسية"))
     return markup
 
-# أمر التشغيل الأولي ونظام الإحالة والكابتشا
 @bot.message_handler(commands=['start'])
 def start_command(message):
     user_id = message.from_user.id
     chat_id = message.chat.id
     user_data = get_user_data(user_id)
     
-    # 1. فحص الاشتراك الإجباري
     if not check_subscription(user_id):
         clean_ch = REQUIRED_CHANNEL.replace("@", "")
         markup = types.InlineKeyboardMarkup()
@@ -115,7 +109,6 @@ def start_command(message):
         bot.send_message(chat_id, f"❌ عذراً! يجب عليك الاشتراك في قناة البوت الرسمية أولاً لتتمكن من استخدامه:\n{REQUIRED_CHANNEL}", reply_markup=markup)
         return
 
-    # 2. فحص نظام الكابتشا
     if user_data["is_verified"] == 0:
         num1, num2 = random.randint(1, 9), random.randint(1, 9)
         correct_ans = num1 + num2
@@ -130,7 +123,6 @@ def start_command(message):
         bot.send_message(chat_id, f"🤖 اختبار الأمان لحمايتنا من الحسابات الوهمية:\n\nكم ناتج عملية: **{num1} + {num2} = ؟**", parse_mode="Markdown", reply_markup=markup)
         return
 
-    # توثيق الإحالة بعد اجتياز الأمان والاشتراك
     text_split = message.text.split()
     if len(text_split) > 1 and user_data["referred_by"] is None:
         try:
@@ -153,7 +145,6 @@ def start_command(message):
 
     bot.send_message(chat_id, "👋 أهلاً بك في النسخة الاحترافية لبوت TON!\nجميع المهام تُفحص تلقائياً ويمكنك الآن الإعلان عن قناتك.", reply_markup=main_keyboard())
 
-# معالجة الضغط على الأزرار والنوافذ التفاعلية
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     user_id = message.from_user.id
@@ -217,3 +208,12 @@ def handle_text(message):
 def user_add_task_step1(message):
     ch_user = message.text
     if not ch_user or not ch_user.startswith("@"):
+        bot.send_message(message.chat.id, "❌ خطأ في معرف القناة. يجب البدء بـ @ العودة للقائمة الرئيسية.", reply_markup=main_keyboard())
+        return
+    msg = bot.send_message(message.chat.id, "كم عدد المشتركين الذين تود طلبهم لقناتك؟ (اكتب رقماً صحيحاً فقط):")
+    bot.register_next_step_handler(msg, user_add_task_step2, ch_user)
+
+def user_add_task_step2(message, ch_user):
+    try:
+        count = int(message.text)
+        cost = count * 0.003
