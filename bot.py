@@ -89,7 +89,7 @@ def admin_keyboard():
     markup.add(btn_add_task, btn_main)
     return markup
 
-# 3. معالجة أمر البدء /start ونظام الإحالة
+# 3. معالجة أمر البدء /start ونظام الإحالة المباشر
 @bot.message_handler(commands=['start'])
 def start_command(message):
     user_id = message.from_user.id
@@ -116,7 +116,7 @@ def start_command(message):
         except ValueError:
             pass
 
-    welcome_text = "👋 أهلاً بك في بوت ربح TON المحدث!\n\nاستخدم الأزرار التقليدية بالأسفل لجمع الأرباح ودعوة الأصدقاء."
+    welcome_text = "👋 أهلاً بك في بوت ربح TON المطور!\n\nاستخدم الأزرار التقليدية بالأسفل لدعوة الأصدقاء وجمع المكافآت مباشرة داخل التطبيق."
     bot.send_message(chat_id, welcome_text, reply_markup=main_keyboard())
 
 # 4. معالجة الضغط على الأزرار التقليدية ولوحة التحكم
@@ -131,10 +131,12 @@ def handle_text(message):
 
     elif message.text == "👥 نظام الإحالة":
         bot_username = bot.get_me().username
-        ref_link = f"https://t.me{bot_username}?start={user_id}"
-        ref_text = f"👥 **نظام الإحالة المدمج:**\n\n💰 ربح كل إحالة: **0.01 TON**\n📊 عدد إحالاتك الحالية: `{user_data['referrals_count']}`\n\n🔗 رابط الإحالة الخاص بك (اضغط عليه مطولاً للنسخ):\n`{ref_link}`"
+        # الرابط المباشر الذي يجبر تليجرام على الفتح فوراً وتخطي المتصفح تماماً
+        ref_link_direct = f"tg://resolve?domain={bot_username}&start={user_id}"
         
-        share_url_native = f"tg://msg_url?url={ref_link}&text=اشترك%20في%20البوت%20واجمع%20عملة%20TON%20مجاناً!"
+        ref_text = f"👥 **نظام الإحالة المباشر:**\n\n💰 ربح كل إحالة: **0.01 TON**\n📊 عدد إحالاتك الحالية: `{user_data['referrals_count']}`\n\n🔗 رابط إحالتك المباشر للتطبيق:\n`{ref_link_direct}`"
+        
+        share_url_native = f"tg://msg_url?url={ref_link_direct}&text=اشترك%20في%20البوت%20واجمع%20عملة%20TON%20مجاناً%20عبر%20هذا%20الرابط%20المباشر!"
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔗 مشاركة الرابط فوراً داخل التليجرام", url=share_url_native))
         bot.send_message(chat_id, ref_text, parse_mode="Markdown", reply_markup=markup)
@@ -219,7 +221,10 @@ def keep_alive_ping():
     time.sleep(45)
     while True:
         if RENDER_URL:
-            requests.get(RENDER_URL)
+            try:
+                requests.get(RENDER_URL, timeout=10)
+            except Exception:
+                pass
         time.sleep(600)
 
 if __name__ == "__main__":
