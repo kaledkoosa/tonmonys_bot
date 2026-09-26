@@ -13,21 +13,20 @@ TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")
 
-# إعدادات القنوات (استبدلها بالمعرفات الخاصة بك أو ضعها في متغيرات البيئة)
-REQUIRED_CHANNEL = "@T_ONo"   # يوزر قناة الاشتراك الإجباري للبوت
-PAYMENT_CHANNEL = "@T_ONo"   # يوزر قناة إثباتات السحب التلقائية
+# إعدادات القنوات (تأكد من تعديلها أو وضع القنوات الخاصة بك)
+REQUIRED_CHANNEL = "@T_ONo"   # يوزر قناة الاشتراك الإجباري
+PAYMENT_CHANNEL = "@T_ONo"   # يوزر قناة إثباتات السحب
 
 bot = telebot.TeleBot(TOKEN)
 DB_FILE = "ton_bot_pro.db"
 
-# الكابتشا والمستخدمين قيد التحقق في الذاكرة المؤقتة
+# الكابتشا والمستخدمين قيد التحقق في الذاكرة
 captcha_data = {}
 
-# دالة إنشاء قاعدة البيانات والميزات المتقدمة
+# دالة إنشاء قاعدة البيانات
 def init_pro_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    # جدول المستخدمين المطور
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -38,7 +37,6 @@ def init_pro_db():
             is_verified INTEGER DEFAULT 0
         )
     ''')
-    # جدول المهام (سواء وضعها الأدمن أو المستخدمون)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,7 +77,7 @@ def update_user_data(user_id, balance, referred_by, referrals_count, completed_t
     conn.commit()
     conn.close()
 
-# دالة التحقق من الاشتراك الإجباري في القناة
+# دالة التحقق من الاشتراك الإجباري
 def check_subscription(user_id):
     try:
         member = bot.get_chat_member(REQUIRED_CHANNEL, user_id)
@@ -89,7 +87,7 @@ def check_subscription(user_id):
         pass
     return False
 
-# تصميم لوحات المفاتيح التقليدية
+# تصميم لوحات المفاتيح
 def main_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add(types.KeyboardButton("📋 المهام المتاحة"), types.KeyboardButton("➕ وضع مهمة خاصة"))
@@ -108,15 +106,16 @@ def start_command(message):
     chat_id = message.chat.id
     user_data = get_user_data(user_id)
     
-    # 1. فحص الاشتراك الإجباري أولاً
+    # 1. فحص الاشتراك الإجباري
     if not check_subscription(user_id):
+        clean_ch = REQUIRED_CHANNEL.replace("@", "")
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("📢 اشترك في القناة هنا", url=f"https://t.me{REQUIRED_CHANNEL.replace('@','') Hospice'}"))
+        markup.add(types.InlineKeyboardButton("📢 اشترك في القناة هنا", url=f"https://t.me{clean_ch}"))
         markup.add(types.InlineKeyboardButton("🔄 تم الاشتراك (تأكيد)", callback_data="check_sub_again"))
         bot.send_message(chat_id, f"❌ عذراً! يجب عليك الاشتراك في قناة البوت الرسمية أولاً لتتمكن من استخدامه:\n{REQUIRED_CHANNEL}", reply_markup=markup)
         return
 
-    # 2. فحص نظام الكابتشا ومنع البوتات الوهمية
+    # 2. فحص نظام الكابتشا
     if user_data["is_verified"] == 0:
         num1, num2 = random.randint(1, 9), random.randint(1, 9)
         correct_ans = num1 + num2
@@ -198,19 +197,23 @@ def handle_text(message):
 
         bot.send_message(chat_id, "📋 **المهام المتوفرة (فحص تلقائي فوري):**")
         for t_id, ch_user, desc, reward in available_tasks:
+            clean_t_ch = ch_user.replace("@", "")
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("📢 فتح القناة للانضمام", url=f"https://t.me{ch_user.replace('@','') }"))
+            markup.add(types.InlineKeyboardButton("📢 فتح القناة للانضمام", url=f"https://t.me{clean_t_ch}"))
             markup.add(types.InlineKeyboardButton("🤖 تحقق وتأكيد تلقائي", callback_data=f"verify_task_{t_id}"))
             bot.send_message(chat_id, f"🔹 **المهمة:** {desc}\n💰 الجائزة: **{reward} TON**", parse_mode="Markdown", reply_markup=markup)
 
-    # ميزة المستخدمين: وضع مهمة خاصة لترويج قنواتهم
     elif message.text == "➕ وضع مهمة خاصة":
         msg = bot.send_message(chat_id, "⚙️ **قسم إعلانات الأعضاء:**\n\nأرسل يوزر قناتك التي تريد ترويجها مع علامة @ (مثال: @my_channel):\n*ملاحظة: تكلفة كل مشترك هي 0.003 TON يتم خصمها من رصيدك الحالي.*", parse_mode="Markdown")
         bot.register_next_step_handler(msg, user_add_task_step1)
 
-    # لوحة تحكم الإدارة للأدمن
     elif message.text == "/admin" and user_id == ADMIN_ID:
         bot.send_message(chat_id, "🔧 أهلاً بك في لوحة تحكم الإدارة العليا.", reply_markup=admin_keyboard())
 
     elif message.text == "➕ إضافة مهمة كأدمن" and user_id == ADMIN_ID:
         msg = bot.send_message(chat_id, "أرسل يوزر القناة المستهدفة للمهمة الإدارية (مثال: @admin_channel):")
+        bot.register_next_step_handler(msg, admin_add_task_step1)
+
+def user_add_task_step1(message):
+    ch_user = message.text
+    if not ch_user or not ch_user.startswith("@"):
