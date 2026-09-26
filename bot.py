@@ -7,19 +7,16 @@ from telebot import types
 from threading import Thread
 from flask import Flask
 
-# 1. إعدادات البوت الأساسية
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))  # معرف الآيدي الخاص بك كأدمن
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")
 
 bot = telebot.TeleBot(TOKEN)
 DB_FILE = "ton_bot_database.db"
 
-# دالة لإنشاء جداول قاعدة البيانات المدمجة تلقائياً
 def init_local_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    # إنشاء جدول المستخدمين
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -29,7 +26,6 @@ def init_local_db():
             completed_tasks TEXT DEFAULT ''
         )
     ''')
-    # إنشاء جدول المهام
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,7 +35,6 @@ def init_local_db():
     conn.commit()
     conn.close()
 
-# دالة لجلب بيانات المستخدم
 def get_user_data(user_id):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -61,7 +56,6 @@ def get_user_data(user_id):
     conn.close()
     return data
 
-# دالة لتحديث بيانات المستخدم
 def update_user_data(user_id, balance, referred_by, referrals_count, completed_tasks):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -74,7 +68,6 @@ def update_user_data(user_id, balance, referred_by, referrals_count, completed_t
     conn.commit()
     conn.close()
 
-# 2. تصميم الأزرار التقليدية الرئيسية (Reply Keyboard)
 def main_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     btn_tasks = types.KeyboardButton("📋 المهام")
@@ -91,7 +84,6 @@ def admin_keyboard():
     markup.add(btn_add_task, btn_main)
     return markup
 
-# 3. معالجة أمر البدء /start ونظام الإحالة
 @bot.message_handler(commands=['start'])
 def start_command(message):
     user_id = message.from_user.id
@@ -103,13 +95,11 @@ def start_command(message):
         try:
             referrer_id = int(text_split[1])
             if referrer_id != user_id:
-                # تحديث بيانات الشخص الذي قام بالدعوة (+0.01 تون)
                 ref_data = get_user_data(referrer_id)
                 ref_data["balance"] += 0.01
                 ref_data["referrals_count"] += 1
                 update_user_data(referrer_id, ref_data["balance"], ref_data["referred_by"], ref_data["referrals_count"], ref_data["completed_tasks"])
                 
-                # تحديث بيانات المستخدم الجديد وتوثيق من استدعاه
                 user_data["referred_by"] = referrer_id
                 update_user_data(user_id, user_data["balance"], user_data["referred_by"], user_data["referrals_count"], user_data["completed_tasks"])
                 
@@ -123,7 +113,6 @@ def start_command(message):
     welcome_text = "👋 أهلاً بك في بوت ربح TON المحدث!\n\nاستخدم الأزرار التقليدية بالأسفل لجمع الأرباح."
     bot.send_message(chat_id, welcome_text, reply_markup=main_keyboard())
 
-# 4. معالجة الضغط على الأزرار التقليدية
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     user_id = message.from_user.id
@@ -136,31 +125,14 @@ def handle_text(message):
     elif message.text == "👥 نظام الإحالة":
         bot_username = bot.get_me().username
         ref_link = f"https://t.me{bot_username}?start={user_id}"
-        ref_text = (
-        elif message.text == "👥 نظام الإحالة":
-        bot_username = bot.get_me().username
-        # استخدام رابط تليجرام المباشر لفتح البوت فوراً دون وسيط ويب
-        ref_link = f"tg://resolve?domain={bot_username}&start={user_id}"
+        ref_text = f"👥 **نظام الإحالة المدمج:**\n\n💰 ربح كل إحالة: **0.01 TON**\n📊 عدد إحالاتك الحالية: `{user_data['referrals_count']}`\n\n🔗 رابط الإحالة الخاص بك (اضغط عليه للنسخ):\n`{ref_link}`"
         
-        ref_text = (
-            f"👥 **نظام الإحالة المدمج:**\n\n"
-            f"💰 ربح كل إحالة: **0.01 TON**\n"
-            f"📊 عدد إحالاتك الحالية: `{user_data['referrals_count']}`\n\n"
-            f"🔗 رابط الإحالة الخاص بك (اضغط عليه للنسخ):\n`https://t.me{bot_username}?start={user_id}`"
-        )
-        
-        # إضافة زر شفاف يسهل على المستخدم مشاركة الرابط مباشرة داخل تليجرام
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🔗 مشاركة رابط الإحالة", url=f"https://t.meshare/url?url=https://t.me{bot_username}?start={user_id}&text=اشترك%20في%20البوت%20واجمع%20عملة%20TON%20مجاناً!"))
-        
+        markup.add(types.InlineKeyboardButton("🔗 مشاركة رابط الإحالة", url=f"https://t.meshare/url?url={ref_link}&text=اشترك%20في%20البوت%20واجمع%20عملة%20TON%20مجاناً!"))
         bot.send_message(chat_id, ref_text, parse_mode="Markdown", reply_markup=markup)
 
-
     elif message.text == "💰 الرصيد والسحب":
-        wallet_text = (
-            f"💰 **رصيدك الحالي:** `{user_data['balance']:.3f} TON`\n\n"
-            f"📥 اضغط على الزر بالأسفل لطلب سحب أرباحك وتنبيه الأدمن."
-        )
+        wallet_text = f"💰 **رصيدك الحالي:** `{user_data['balance']:.3f} TON`\n\n📥 اضغط على الزر بالأسفل لطلب سحب أرباحك وتنبيه الأدمن."
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("➡️ طلب سحب الأرباح", callback_data="request_withdraw"))
         bot.send_message(chat_id, wallet_text, parse_mode="Markdown", reply_markup=markup)
@@ -184,7 +156,6 @@ def handle_text(message):
             markup.add(types.InlineKeyboardButton("✅ إكمال المهمة وتأكيدها", callback_data=f"complete_task_{task_id}"))
             bot.send_message(chat_id, f"🔹 {description}\n💰 المكافأة: **0.003 TON**", parse_mode="Markdown", reply_markup=markup)
 
-    # لوحة تحكم الأدمن
     elif message.text == "/admin" and user_id == ADMIN_ID:
         bot.send_message(chat_id, "🔧 أهلاً بك في لوحة تحكم الأدمن المدمجة.", reply_markup=admin_keyboard())
 
@@ -201,7 +172,6 @@ def save_task(message):
         conn.close()
         bot.send_message(message.chat.id, "✅ تم حفظ المهمة بنجاح وعرضها للمستخدمين!", reply_markup=admin_keyboard())
 
-# 5. أزرار التأكيد المضمنة
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     user_id = call.from_user.id
@@ -225,7 +195,6 @@ def callback_query(call):
         else:
             bot.answer_callback_query(call.id, "لقد قمت بهذه المهمة مسبقاً!", show_alert=True)
 
-# خادم الويب وجهاز الـ Keep-Alive
 flask_app = Flask('')
 
 @flask_app.route('/')
@@ -247,7 +216,6 @@ def keep_alive_ping():
         time.sleep(600)
 
 if __name__ == "__main__":
-    # تشغيل قاعدة البيانات المدمجة فوراً
     init_local_db()
     
     flask_thread = Thread(target=run_flask_server)
