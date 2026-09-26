@@ -229,3 +229,5 @@ def keep_alive_ping():
     # انتظار دقيقة لضمان إقلاع السيرفر
     time.sleep(60)
     while True:
+        if RENDER_URL:
+            try:
