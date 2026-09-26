@@ -137,12 +137,24 @@ def handle_text(message):
         bot_username = bot.get_me().username
         ref_link = f"https://t.me{bot_username}?start={user_id}"
         ref_text = (
+        elif message.text == "👥 نظام الإحالة":
+        bot_username = bot.get_me().username
+        # استخدام رابط تليجرام المباشر لفتح البوت فوراً دون وسيط ويب
+        ref_link = f"tg://resolve?domain={bot_username}&start={user_id}"
+        
+        ref_text = (
             f"👥 **نظام الإحالة المدمج:**\n\n"
             f"💰 ربح كل إحالة: **0.01 TON**\n"
             f"📊 عدد إحالاتك الحالية: `{user_data['referrals_count']}`\n\n"
-            f"🔗 رابط الإحالة الخاص بك:\n`{ref_link}`"
+            f"🔗 رابط الإحالة الخاص بك (اضغط عليه للنسخ):\n`https://t.me{bot_username}?start={user_id}`"
         )
-        bot.send_message(chat_id, ref_text, parse_mode="Markdown")
+        
+        # إضافة زر شفاف يسهل على المستخدم مشاركة الرابط مباشرة داخل تليجرام
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🔗 مشاركة رابط الإحالة", url=f"https://t.meshare/url?url=https://t.me{bot_username}?start={user_id}&text=اشترك%20في%20البوت%20واجمع%20عملة%20TON%20مجاناً!"))
+        
+        bot.send_message(chat_id, ref_text, parse_mode="Markdown", reply_markup=markup)
+
 
     elif message.text == "💰 الرصيد والسحب":
         wallet_text = (
